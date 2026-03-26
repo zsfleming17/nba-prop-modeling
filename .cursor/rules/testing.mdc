@@ -1,0 +1,11 @@
+---
+globs: **/*Test.java
+alwaysApply: false
+---
+# Testing
+
+- Use JUnit 5 and Mockito. No other testing frameworks.
+- Write unit tests for all scoring logic and feature engineering.
+- Lambda handler tests must mock all AWS SDK calls — no live AWS calls in tests.
+- Test method names should clearly describe the scenario:
+  `givenHighUsagePct_whenScored_thenEdgeIsPositive` style.

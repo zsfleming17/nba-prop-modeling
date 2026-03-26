@@ -1,0 +1,302 @@
+# Sports Prop Modeling — serverless stack. No NAT Gateway; Lambdas use public NBA.com + AWS APIs only.
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: NBA prop ingestion, PrizePicks lines, scoring, outcomes, read API (free-tier oriented)
+
+Parameters:
+  BillingMode:
+    Type: String
+    Default: PAY_PER_REQUEST
+    AllowedValues:
+      - PAY_PER_REQUEST
+      - PROVISIONED
+    Description: DynamoDB capacity — use PROVISIONED (1/1) in prod to maximize free tier control
+
+Conditions:
+  IsProvisioned: !Equals [!Ref BillingMode, PROVISIONED]
+
+Globals:
+  Function:
+    Runtime: java21
+    Architectures:
+      - x86_64
+    MemorySize: 512
+    Timeout: 120
+    Tracing: Active
+    Environment:
+      Variables:
+        PLAYER_GAME_STATS_TABLE: !Ref PlayerGameStatsTable
+        PROP_LINES_TABLE: !Ref PropLinesTable
+        EDGE_SCORES_TABLE: !Ref EdgeScoresTable
+        OUTCOMES_TABLE: !Ref OutcomesTable
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  PlayerGameStatsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: !Ref BillingMode
+      ProvisionedThroughput: !If
+        - IsProvisioned
+        - ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        - !Ref AWS::NoValue
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+
+  PropLinesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: !Ref BillingMode
+      ProvisionedThroughput: !If
+        - IsProvisioned
+        - ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        - !Ref AWS::NoValue
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+
+  EdgeScoresTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: !Ref BillingMode
+      ProvisionedThroughput: !If
+        - IsProvisioned
+        - ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        - !Ref AWS::NoValue
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: PlayerEdgeIndex
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - IsProvisioned
+            - ReadCapacityUnits: 1
+              WriteCapacityUnits: 1
+            - !Ref AWS::NoValue
+
+  OutcomesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: !Ref BillingMode
+      ProvisionedThroughput: !If
+        - IsProvisioned
+        - ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        - !Ref AWS::NoValue
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: PlayerOutcomeIndex
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - IsProvisioned
+            - ReadCapacityUnits: 1
+              WriteCapacityUnits: 1
+            - !Ref AWS::NoValue
+
+  NbaIngestionFunctionV2:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: com.sportsprop.nbaingestion.NbaIngestionHandler::handleRequest
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlayerGameStatsTable
+        - S3WritePolicy:
+            BucketName: !Ref DataBucket
+      Events:
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 4 * * ? *)
+            Description: Ingest NBA box scores (4 AM UTC)
+            Enabled: true
+
+  # S3 read uses managed policy (no Ref to DataBucket) to avoid CFN cycle with bucket notification → Lambda.
+  PpLineIngestionFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: com.sportsprop.ppline.PpLineIngestionHandler::handleRequest
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PropLinesTable
+        - AmazonS3ReadOnlyAccess
+      Events:
+        PpLinesUpload:
+          Type: S3
+          Properties:
+            Bucket: !Ref DataBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: prizepicks/lines/
+                  - Name: suffix
+                    Value: .json
+
+  ScoringFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: com.sportsprop.scoring.ScoringHandler::handleRequest
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlayerGameStatsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PropLinesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EdgeScoresTable
+      Events:
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(10 4 * * ? *)
+            Description: Score edges after ingestion window
+            Enabled: true
+
+  OutcomeRecorderFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: com.sportsprop.outcomes.OutcomeRecorderHandler::handleRequest
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlayerGameStatsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PropLinesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EdgeScoresTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(30 4 * * ? *)
+            Description: Record prop outcomes for backtesting
+            Enabled: true
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - OPTIONS
+        AllowOrigins:
+          - '*'
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: com.sportsprop.api.ApiHandler::handleRequest
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EdgeScoresTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        Edges:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /edges
+            Method: GET
+        PlayerHistory:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /player/{id}/history
+            Method: GET
+
+Outputs:
+  HttpApiUrl:
+    Description: Base URL for the HTTP API
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/
+
+  DataBucketName:
+    Description: Upload PrizePicks lines to prizepicks/lines/YYYY-MM-DD.json
+    Value: !Ref DataBucket
+

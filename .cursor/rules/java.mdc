@@ -1,0 +1,49 @@
+---
+globs: **/*.java
+alwaysApply: false
+---
+# Java
+
+## Core
+- Target Java 21. Use records for immutable data models, sealed classes where
+  appropriate, and modern idioms (switch expressions, text blocks, etc.).
+- Never return null — use `Optional` from repository and service methods.
+- All configuration (table names, bucket names, region) comes from environment
+  variables. Never hardcode these.
+- Use SLF4J for logging everywhere. No `System.out.println`.
+- All external HTTP calls must have a connect timeout of 5s, a read timeout of
+  10s, and retry with exponential backoff (max 3 attempts, starting at 500ms).
+- Keep Lambda handlers thin — business logic lives in service and scoring classes,
+  not in the handler itself.
+- No commented-out code. No dead imports.
+- Constructor injection only — no field injection, no setter injection.
+
+## Naming & Readability
+- Names should be self-documenting. Never abbreviate — `playerGameStats` not `pgs`,
+  `calculateEdgeScore` not `calcEdge`.
+- Boolean variables and methods should read as questions: `isHomeGame`, `hasMinimumSampleSize`.
+- Avoid generic names like `data`, `result`, `temp`, `obj`.
+- Methods should do one thing. If you need "and" to describe what a method does, split it.
+- Avoid deep nesting — prefer early returns and guard clauses.
+
+## Design
+- Program to interfaces, not implementations. Depend on `EdgeScorer` not `PointsEdgeScorer`.
+- Use the builder pattern for objects with more than 3-4 constructor parameters.
+- Validate inputs at the entry point of a method (fail fast). Don't let bad data
+  travel deep into the call stack before blowing up.
+- Prefer composition over inheritance, but use inheritance when it genuinely makes sense.
+- No magic numbers or strings inline — everything goes in constants.
+
+## Immutability
+- Prefer immutable objects. Use Java records for data carriers. Never expose
+  mutable internal state.
+- Collections returned from methods should be unmodifiable (`List.copyOf`,
+  `Collections.unmodifiableList`) unless the caller genuinely needs to mutate them.
+- Use `final` on fields that are set once (constructor-injected dependencies,
+  constants). Use `final` on local variables when the value never reassigns.
+
+## Exception Handling & Logging
+- Never swallow exceptions silently. Either handle meaningfully, log and rethrow,
+  or wrap in a domain-specific unchecked exception.
+- Log exceptions with full stack traces at ERROR level. Log key decision points
+  at DEBUG level. Do not log sensitive data.

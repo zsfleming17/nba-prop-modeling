@@ -1,0 +1,36 @@
+---
+alwaysApply: true
+---
+
+# General
+
+## Project Context
+Always read `PROJECT_CONTEXT.md` before making architectural or implementation
+decisions. It defines the stack, cost constraints, data sources, and V1 scope.
+
+## Principles
+- This is production-grade code, not a quick script. Write it accordingly.
+- Prefer simple and explicit over clever.
+- When multiple approaches exist, recommend the one that fits the existing
+  architecture rather than introducing new patterns.
+- If a decision has a meaningful tradeoff, call it out before proceeding.
+
+## Code Style
+- Follow standard Java naming conventions (camelCase methods, PascalCase classes).
+- Keep methods short and single-purpose.
+- No commented-out code.
+- Prefer composition over inheritance, but use inheritance when it genuinely makes sense.
+
+## Project Structure
+- Constants used across multiple classes live in `common/constants/`.
+- Reusable utility logic (date/time conversions, string formatting, etc.) that
+  doesn't belong to a specific domain class lives in `common/util/`. Util classes
+  should be stateless with static methods and a private constructor.
+
+## Documentation
+- Keep `README.md` up to date when adding new API endpoints, Lambda functions,
+  supported prop types, or changes to the build/deploy process.
+- Update `PROGRESS.md` at the end of every session to reflect what's working,
+  what's in progress, and what's next.
+- Update `PROJECT_CONTEXT.md` when architectural decisions change, new design
+  patterns are established, or anything in the stack changes.

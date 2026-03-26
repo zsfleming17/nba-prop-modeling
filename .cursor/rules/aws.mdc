@@ -1,0 +1,17 @@
+---
+description: Designing or modifying AWS infrastructure, choosing between AWS services, configuring Lambda functions, or working with DynamoDB and template.yaml
+alwaysApply: false
+---
+# AWS & Cost
+
+- If a suggestion would incur AWS cost beyond the free tier, flag it explicitly
+  and offer a free alternative.
+- Never suggest RDS, SageMaker, ElastiCache, or NAT Gateways.
+- All infrastructure is defined in `template.yaml` (AWS SAM). If new AWS resources
+  are needed, add them there — never suggest console-only solutions.
+- Lambda memory should stay at 512 MB unless there is a clear, justified reason
+  to increase it.
+- DynamoDB access should use on-demand capacity mode in dev. All access goes
+  through repository classes — no raw SDK calls in handler or service code.
+- AWS SDK clients are instantiated only in repository or service constructors,
+  never in handlers.

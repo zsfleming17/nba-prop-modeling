@@ -1,0 +1,6 @@
+target/
+.aws-sam/
+.idea/
+*.iml
+samconfig.toml.bak
+.DS_Store
