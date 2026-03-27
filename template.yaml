@@ -1,4 +1,4 @@
-# Sports Prop Modeling — serverless stack. No NAT Gateway; Lambdas use public NBA.com + AWS APIs only.
+# Sports Prop Modeling — serverless stack. No NAT Gateway; Lambdas use AWS APIs; NBA stats prefer S3 (GitHub Actions + nba_api).
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: NBA prop ingestion, PrizePicks lines, scoring, outcomes, read API (free-tier oriented)
@@ -165,14 +165,19 @@ Resources:
     Metadata:
       BuildMethod: makefile
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-NbaIngestionFunctionV2"
       CodeUri: .
       Handler: com.sportsprop.nbaingestion.NbaIngestionHandler::handleRequest
       Environment:
         Variables:
           DATA_BUCKET: !Ref DataBucket
+          # S3_THEN_HTTP | S3 | HTTP — default prefers s3://.../nba/api/YYYY-MM-DD.json from GitHub Actions
+          NBA_INGEST_SOURCE: S3_THEN_HTTP
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref PlayerGameStatsTable
+        - S3ReadPolicy:
+            BucketName: !Ref DataBucket
         - S3WritePolicy:
             BucketName: !Ref DataBucket
       Events:
@@ -189,6 +194,7 @@ Resources:
     Metadata:
       BuildMethod: makefile
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-PpLineIngestionFunction"
       CodeUri: .
       Handler: com.sportsprop.ppline.PpLineIngestionHandler::handleRequest
       Policies:
@@ -214,6 +220,7 @@ Resources:
     Metadata:
       BuildMethod: makefile
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-ScoringFunction"
       CodeUri: .
       Handler: com.sportsprop.scoring.ScoringHandler::handleRequest
       Policies:
@@ -236,6 +243,7 @@ Resources:
     Metadata:
       BuildMethod: makefile
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-OutcomeRecorderFunction"
       CodeUri: .
       Handler: com.sportsprop.outcomes.OutcomeRecorderHandler::handleRequest
       Policies:
@@ -270,6 +278,7 @@ Resources:
     Metadata:
       BuildMethod: makefile
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-ApiFunction"
       CodeUri: .
       Handler: com.sportsprop.api.ApiHandler::handleRequest
       Policies:

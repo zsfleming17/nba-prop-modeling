@@ -21,13 +21,28 @@ import java.util.Map;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 
 /**
  * Client for stats.nba.com. Uses polite delay between requests.
+ * HTTP calls use bounded connect and per-request timeouts.
  */
 public class NbaStatsClient {
 
+    public static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+    public static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
+
     private static final String BASE = "https://stats.nba.com/stats/leaguegamelog";
+
+    /**
+     * Shared {@link HttpClient} for Lambda and tests (connect timeout only; each {@link HttpRequest} sets read timeout).
+     */
+    public static HttpClient newDefaultHttpClient() {
+        return HttpClient.newBuilder()
+                .connectTimeout(CONNECT_TIMEOUT)
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+    }
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final long minIntervalMs;
@@ -50,6 +65,7 @@ public class NbaStatsClient {
         URI uri = URI.create(BASE + "?" + query);
         throttle();
         HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(REQUEST_TIMEOUT)
                 .header("User-Agent", "Mozilla/5.0 (compatible; SportsPropModel/1.0)")
                 .header("Referer", "https://www.nba.com/")
                 .header("Accept", "application/json")
@@ -71,7 +87,10 @@ public class NbaStatsClient {
         lastRequestAt = System.currentTimeMillis();
     }
 
-    List<PlayerGameStatLine> parseLeagueGameLog(String json) throws IOException {
+    /**
+     * Parses stats.nba.com league game log JSON (or equivalent {@code nba_api} {@code LeagueGameLog} response).
+     */
+    public List<PlayerGameStatLine> parseLeagueGameLog(String json) throws IOException {
         JsonNode root = objectMapper.readTree(json);
         JsonNode resultSets = root.get("resultSets");
         if (resultSets == null || !resultSets.isArray() || resultSets.isEmpty()) {

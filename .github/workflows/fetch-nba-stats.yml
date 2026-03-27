@@ -1,0 +1,34 @@
+name: Fetch NBA stats (nba_api)
+
+on:
+  repository_dispatch:
+    types: [fetch-nba-stats]
+  schedule:
+    # 03:50 UTC daily — before stack-named NbaIngestionFunctionV2 schedule (04:00 UTC); see README for function name pattern
+    - cron: "50 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NBA_S3_REGION: us-east-1
+      NBA_S3_API_KEY_PREFIX: nba/api
+      NBA_LOG_LEVEL: INFO
+      NBA_S3_BUCKET: ${{ secrets.PP_S3_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python3 -m pip install --upgrade pip && python3 -m pip install boto3 nba_api
+
+      - name: Fetch league game log and upload to S3
+        run: python3 scripts/fetch_nba_api_stats.py --s3-bucket "${NBA_S3_BUCKET}" --s3-region "${NBA_S3_REGION}"
